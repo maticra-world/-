@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>ドア前承認システム - Ably版</title>
+</head>
+<body>
+  <h1>ドア前承認システム</h1>
+
+  <div id="visitor-section">
+    <h2>訪問者</h2>
+    <input id="visitorName" placeholder="名前を入力" />
+    <button onclick="sendRequest()">入室希望を送る</button>
+    <p id="visitorStatus"></p>
+  </div>
+
+  <hr />
+
+  <div id="admin-section">
+    <h2>管理者</h2>
+    <ul id="requestList"></ul>
+  </div>
+
+  <script src="https://cdn.ably.io/lib/ably.min-1.js"></script>
+  <script>
+    const ably = new Ably.Realtime('7v7Dqg.bUfCWQ:LSK7919nwJl05XnUVitDTaUe6_gKFPoOTN4BmBndXqU');
+    const channel = ably.channels.get('door-approval');
+
+    function sendRequest() {
+      const name = document.getElementById('visitorName').value.trim();
+      if (!name) {
+        alert('名前を入力してください');
+        return;
+      }
+      channel.publish('request', { name, id: Date.now() });
+      document.getElementById('visitorStatus').textContent = 'リクエスト送信しました。管理者の承認を待っています。';
+    }
+
+    const requestList = document.getElementById('requestList');
+    let pendingRequests = {};
+
+    channel.subscribe('request', message => {
+      const { name, id } = message.data;
+      if (pendingRequests[id]) return;
+
+      pendingRequests[id] = { name, id };
+      renderRequests();
+    });
+
+    channel.subscribe('response', message => {
+      const { id, approved } = message.data;
+      if (approved) {
+        alert('あなたの入室リクエストが承認されました！');
+        document.getElementById('visitorStatus').textContent = '入室を許可されました！';
+      } else {
+        alert('入室リクエストが拒否されました。');
+        document.getElementById('visitorStatus').textContent = '入室が拒否されました。';
+      }
+    });
+
+    function renderRequests() {
+      requestList.innerHTML = '';
+      for (const id in pendingRequests) {
+        const req = pendingRequests[id];
+        const li = document.createElement('li');
+        li.textContent = `${req.name} さんが入室希望しています `;
+        const approveBtn = document.createElement('button');
+        approveBtn.textContent = '承認';
+        approveBtn.onclick = () => sendResponse(req.id, true);
+        const denyBtn = document.createElement('button');
+        denyBtn.textContent = '拒否';
+        denyBtn.onclick = () => sendResponse(req.id, false);
+        li.appendChild(approveBtn);
+        li.appendChild(denyBtn);
+        requestList.appendChild(li);
+      }
+    }
+
+    function sendResponse(id, approved) {
+      channel.publish('response', { id, approved });
+      if (approved) {
+        alert('承認しました');
+      } else {
+        alert('拒否しました');
+      }
+      delete pendingRequests[id];
+      renderRequests();
+    }
+  </script>
+</body>
+</html>
